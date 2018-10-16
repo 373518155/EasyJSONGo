@@ -6,11 +6,48 @@ import (
 	"strings"
 	"strconv"
 	"reflect"
+	"runtime"
+	"fmt"
+	"time"
 )
+
+
+/*
+Go 的基本类型有
+
+bool
+string
+
+int  int8  int16  int32  int64
+uint uint8 uint16 uint32 uint64 uintptr
+
+byte // uint8 的别名
+
+rune // int32 的别名，表示一个 Unicode 码点
+
+float32 float64
+
+complex64 complex128
+
+int, uint 和 uintptr 在 32 位系统上通常为 32 位宽，在 64 位系统上则为 64 位宽。
+当你需要一个整数值时应使用 int 类型，除非你有特殊的理由使用固定大小或无符号的整数类型。
+
+
+a是数组，s是切片
+a := [3]int{6, 7, 8} // shorthand declaration to create array
+s := []int{6, 7, 8} //creates and array and returns a slice reference
+
+ */
+
+
+
 
 type EasyJSON struct {
 	jsonType int  // JSON类型: 对象或是数组
-	data interface{}  // 底层的数据表示
+
+	// 底层的数据表示
+	m map[string] interface{}
+	a []interface{}
 }
 
 const (
@@ -26,6 +63,9 @@ var (
 	ErrInvalidArguments = errors.New("invalid arguments")
 	ErrIndexOutOfBounds = errors.New("index out of bounds")
 	ErrFieldNotExists = errors.New("field not exists")
+	ErrNotAnArray = errors.New("not an array")
+	ErrNotAnObject = errors.New("not an object")
+	ErrNotAStruct = errors.New("not a struct")
 )
 
 
@@ -62,10 +102,14 @@ func Parse(jsonString string) (*EasyJSON, error) {
 		return nil, err
 	}
 
-	return &EasyJSON{jsonType, data}, nil
+	// slog("data[%v]", data)
+
+	if jsonType == JSON_TYPE_OBJECT {
+		return &EasyJSON{jsonType, data.(map[string] interface{}), nil}, nil
+	} else {
+		return &EasyJSON{jsonType, nil, data.([]interface{})}, nil
+	}
 }
-
-
 
 /**
 生成一个JSON对象
@@ -87,16 +131,12 @@ func Object(args ...interface{}) *EasyJSON {
 		if index % 2 == 0 {  // name
 			name = value.(string)
 		} else {  // value
-			if strings.Contains(reflect.TypeOf(value).String(), "EasyJSON") {  // 如果是EasyJSON类型，获取其底层的数据
-				value = value.(*EasyJSON).data
-			}
-			m[name] = value
+			m[name] = valueEncoder(value)
 		}
 	}
 
-	return &EasyJSON{JSON_TYPE_OBJECT, m}
+	return &EasyJSON{JSON_TYPE_OBJECT, m, nil}
 }
-
 
 /**
 生成一个JSON数组
@@ -105,13 +145,10 @@ func Object(args ...interface{}) *EasyJSON {
 func Array(args ...interface{}) *EasyJSON {
 	var a []interface{}
 	for _, arg := range args {
-		if strings.Contains(reflect.TypeOf(arg).String(), "EasyJSON") {  // 如果是EasyJSON类型，获取其底层的数据
-			a = append(a, arg.(*EasyJSON).data)
-		} else {
-			a = append(a, arg)
-		}
+		a = append(a, valueEncoder(arg))
 	}
-	return &EasyJSON{JSON_TYPE_ARRAY, a}
+	// slog("a[%v]", a)
+	return &EasyJSON{JSON_TYPE_ARRAY, nil, a}
 }
 
 
@@ -131,14 +168,25 @@ func (easyJSON *EasyJSON) GetJSONType() int {
 获取底层的JSON数据表示
  */
 func (easyJSON *EasyJSON) GetData() interface{}  {
-	return easyJSON.data
+	jsonType := easyJSON.GetJSONType()
+	if jsonType == JSON_TYPE_OBJECT {
+		return easyJSON.m
+	} else {
+		return easyJSON.a
+	}
 }
 
 func (easyJSON *EasyJSON) Get(path string) (interface{}, error)  {
 	nameList := parsePath(path)
 	var value interface{}
 
-	value = easyJSON.data
+	jsonType := easyJSON.GetJSONType()
+	if jsonType == JSON_TYPE_OBJECT {
+		value = easyJSON.m
+	} else {
+		value = easyJSON.a
+	}
+
 
 	for _, name := range nameList {
 		ch := name[0]
@@ -165,6 +213,16 @@ func (easyJSON *EasyJSON) Get(path string) (interface{}, error)  {
 }
 
 
+func (easyJSON *EasyJSON) Opt(path string, defaultValue interface{}) interface{} {
+	value, err := easyJSON.Get(path)
+	if err == nil {
+		return value
+	}
+
+	return defaultValue
+}
+
+
 func (easyJSON *EasyJSON) Exists(path string) bool {
 	_, err := easyJSON.Get(path)
 	return err == nil
@@ -178,18 +236,43 @@ func (easyJSON *EasyJSON) GetInt64(path string) (int64, error) {
 	}
 
 	switch value.(type) {
-	case float64:
-		return int64(value.(float64)), nil
-	case float32:
-		return int64(value.(float32)), nil
-	case int64:
-		return value.(int64), nil
 	case int:
 		return int64(value.(int)), nil
+	case int8:
+		return int64(value.(int8)), nil
+	case int16:
+		return int64(value.(int16)), nil
+	case int32:
+		return int64(value.(int32)), nil
+	case int64:
+		return value.(int64), nil
+	case uint:
+		return int64(value.(uint)), nil
+	case uint8:
+		return int64(value.(uint8)), nil
+	case uint16:
+		return int64(value.(uint16)), nil
+	case uint32:
+		return int64(value.(uint32)), nil
+	case uint64:
+		return int64(value.(uint64)), nil
+	case float32:
+		return int64(value.(float32)), nil
+	case float64:
+		return int64(value.(float64)), nil
 	}
 
 	// 理论上到不了这里
 	return 0, nil
+}
+
+func (easyJSON *EasyJSON) OptInt64(path string, defaultValue int64) int64 {
+	value, err := easyJSON.GetInt64(path)
+	if err == nil {
+		return value
+	}
+
+	return defaultValue
 }
 
 func (easyJSON *EasyJSON) GetFloat64(path string) (float64, error) {
@@ -209,6 +292,16 @@ func (easyJSON *EasyJSON) GetFloat64(path string) (float64, error) {
 	return 0, nil
 }
 
+
+func (easyJSON *EasyJSON) OptFloat64(path string, defaultValue float64) float64 {
+	value, err := easyJSON.GetFloat64(path)
+	if err == nil {
+		return value
+	}
+
+	return defaultValue
+}
+
 func (easyJSON *EasyJSON) GetBoolean(path string) (bool, error) {
 	value, err := easyJSON.Get(path)
 	if err != nil {
@@ -217,6 +310,16 @@ func (easyJSON *EasyJSON) GetBoolean(path string) (bool, error) {
 
 	return value.(bool), nil
 }
+
+func (easyJSON *EasyJSON) OptBoolean(path string, defaultValue bool) bool {
+	value, err := easyJSON.GetBoolean(path)
+	if err == nil {
+		return value
+	}
+
+	return defaultValue
+}
+
 
 func (easyJSON *EasyJSON) GetString(path string) (string, error) {
 	value, err := easyJSON.Get(path)
@@ -227,13 +330,32 @@ func (easyJSON *EasyJSON) GetString(path string) (string, error) {
 	return value.(string), nil
 }
 
+func (easyJSON *EasyJSON) OptString(path string, defaultValue string) string {
+	value, err := easyJSON.GetString(path)
+	if err == nil {
+		return value
+	}
+
+	return defaultValue
+}
+
 func (easyJSON *EasyJSON) GetObject(path string) (*EasyJSON, error) {
 	value, err := easyJSON.Get(path)
 	if err != nil {
 		return nil, err
 	}
 
-	return &EasyJSON{JSON_TYPE_OBJECT, value}, nil
+	return &EasyJSON{JSON_TYPE_OBJECT, value.(map[string] interface{}), nil}, nil
+}
+
+
+func (easyJSON *EasyJSON) OptObject(path string, defaultValue *EasyJSON) *EasyJSON {
+	value, err := easyJSON.GetObject(path)
+	if err == nil {
+		return value
+	}
+
+	return defaultValue
 }
 
 
@@ -243,22 +365,308 @@ func (easyJSON *EasyJSON) GetArray(path string) (*EasyJSON, error) {
 		return nil, err
 	}
 
-	return &EasyJSON{JSON_TYPE_ARRAY, value}, nil
+	return &EasyJSON{JSON_TYPE_ARRAY, nil, value.([]interface{})}, nil
+}
+
+func (easyJSON *EasyJSON) OptArray(path string, defaultValue *EasyJSON) *EasyJSON {
+	value, err := easyJSON.GetArray(path)
+	if err == nil {
+		return value
+	}
+
+	return defaultValue
+}
+
+func (easyJSON *EasyJSON) Set(path string, value interface{}) error  {
+	value = valueEncoder(value)
+
+	nameList := parsePath(path)
+	var iter interface{}
+
+	jsonType := easyJSON.GetJSONType()
+	if jsonType == JSON_TYPE_OBJECT {
+		iter = easyJSON.m
+	} else {
+		iter = easyJSON.a
+	}
+
+	nameCount := len(nameList)
+	// slog("nameCount[%v]", nameCount)
+
+	counter := 0
+	for _, name := range nameList {
+		counter++
+		ch := name[0]
+		if ch == '[' {  // 表明是数组
+			size := len(name)
+			name = name[1 : size - 1]  // 去除前后中括号
+			index, _ := strconv.Atoi(name)
+
+			a := iter.([]interface{})
+			if index >= len(a) {  // 数组越界
+				return ErrIndexOutOfBounds
+			}
+
+			if counter == nameCount {  // 已经到达path的终点
+				a[index] = value
+				return nil
+			}
+
+			// 还需要继续遍历
+			iter = a[index]
+		} else { // 表明是对象
+			m := iter.(map[string] interface{})
+			if counter == nameCount {  // 已经到达path的终点
+				m[name] = value
+				return nil
+			}
+
+			// 还需要继续遍历
+			val, ok := m[name]
+			if !ok {
+				return ErrFieldNotExists
+			}
+			iter = val
+		}
+	}
+	return nil
 }
 
 
+
+func (easyJSON *EasyJSON) Append(path string, value interface{}) error {
+	value = valueEncoder(value)
+
+	var iter interface{}
+
+	jsonType := easyJSON.GetJSONType()
+	if jsonType == JSON_TYPE_OBJECT {
+		iter = easyJSON.m
+	} else {
+		iter = easyJSON.a
+	}
+
+	// 如果path为空字符串，表示在最外层进行Append操作
+	if path == "" {
+		if jsonType != JSON_TYPE_ARRAY {
+			return ErrNotAnArray
+		}
+
+		easyJSON.a = append(easyJSON.a, value)
+		return nil
+	}
+
+	nameList := parsePath(path)
+	nameCount := len(nameList)
+	// slog("nameCount[%v]", nameCount)
+
+	counter := 0
+	for _, name := range nameList {
+		counter++
+		ch := name[0]
+		if ch == '[' {
+			size := len(name)
+			name = name[1 : size - 1]  // 去除前后中括号
+			index, _ := strconv.Atoi(name)
+
+			a := iter.([]interface{})
+			if index >= len(a) {  // 数组越界
+				return ErrIndexOutOfBounds
+			}
+
+			if counter == nameCount {  // 已经到达path的终点
+				a[index] = append(a[index].([]interface{}), value)
+				return nil
+			}
+
+			// 还需要继续遍历
+			iter = a[index]
+		} else {
+			m := iter.(map[string] interface{})
+			if counter == nameCount {  // 已经到达path的终点
+				m[name] = append(m[name].([]interface{}), value)
+				return nil
+			}
+
+			// 还需要继续遍历
+			val, ok := m[name]
+			if !ok {
+				return ErrFieldNotExists
+			}
+			iter = val
+		}
+	}
+	return nil
+}
 
 
 /*
 返回JSON字符串
+因为
+var arr []interface{}
+json.Marshal(arr) 会返回null
+所以要自定义String()方法
+
+json/encode.go源码中的注释
+Array and slice values encode as JSON arrays, except that
+[]byte encodes as a base64-encoded string, and a nil slice
+encodes as the null JSON value.
  */
 func (easyJSON *EasyJSON) String() string {
-	b, err := json.Marshal(easyJSON.data)
-	if err == nil {
-		return string(b)
+	jsonType := easyJSON.GetJSONType()
+	if jsonType == JSON_TYPE_OBJECT {
+		return toJSONString(easyJSON.m, JSON_TYPE_OBJECT)
+	} else {
+		return toJSONString(easyJSON.a, JSON_TYPE_ARRAY)
 	}
-	return ""
 }
+
+func toJSONString(json interface{}, jsonType int) string {
+	jsonString := ""
+	first := true
+
+	if jsonType == JSON_TYPE_OBJECT {
+		jsonString += "{"
+		for k, v := range json.(map[string] interface{}) {
+			// slog("k[%v], v[%v]", k, v)
+
+			if !first {
+				jsonString += ","
+			}
+			first = false
+
+			jsonString += `"` + k + `":`
+
+			if v == nil {
+				jsonString += "null"
+			} else {
+				kind := reflect.TypeOf(v).Kind().String()
+				// slog("kind[%s]", kind)
+
+
+				if kind == "string" {
+					jsonString += `"` + v.(string) + `"`
+				} else if kind == "map" {
+					jsonString += toJSONString(v, JSON_TYPE_OBJECT)
+				} else if kind == "slice" {
+					jsonString += toJSONString(v, JSON_TYPE_ARRAY)
+				} else {
+					jsonString += fmt.Sprintf("%v", v)
+				}
+			}
+		}
+		jsonString += "}"
+	} else {
+		jsonString += "["
+		for _, v := range json.([] interface{}) {
+
+			if !first {
+				jsonString += ","
+			}
+			first = false
+
+			if v == nil {
+				jsonString += "null"
+			} else {
+				kind := reflect.TypeOf(v).Kind().String()
+				// slog("kind[%s]", kind)
+
+
+				if kind == "string" {
+					jsonString += `"` + v.(string) + `"`
+				} else if kind == "map" {
+					jsonString += toJSONString(v, JSON_TYPE_OBJECT)
+				} else if kind == "slice" {
+					jsonString += toJSONString(v, JSON_TYPE_ARRAY)
+				} else {
+					jsonString += fmt.Sprintf("%v", v)
+				}
+			}
+		}
+		jsonString += "]"
+	}
+
+	return jsonString
+}
+
+func valueEncoder(val interface{}) interface{}  {
+	if val == nil {
+		return nil
+	}
+
+	t := reflect.TypeOf(val)
+	k := t.Kind()
+
+	// 如果是EasyJSON类型，获取其底层的数据
+	if strings.Contains(t.String(), "EasyJSON") {
+		json := val.(*EasyJSON)
+		if json.GetJSONType() == JSON_TYPE_OBJECT {
+			return json.m
+		} else {
+			return json.a
+		}
+	}
+
+	// 如果是指针，取其指向的值
+	if k == reflect.Ptr {
+		v := reflect.ValueOf(val)
+		val = v.Elem().Interface()
+		k = reflect.TypeOf(val).Kind()
+	}
+
+	if k == reflect.Struct {
+		return structEncoder(val)
+	}
+
+	if k == reflect.Array || k == reflect.Slice {
+		return arrayEncoder(val)
+	}
+
+	return val
+}
+
+func arrayEncoder(val interface{}) []interface{} {
+	a := []interface{}{}
+
+	v := reflect.ValueOf(val)
+	n := v.Len()
+	for i := 0; i < n; i++ {
+		// slog("i = %d, elem = %v", i, v.Index(i))
+		elem := valueEncoder(v.Index(i).Interface())
+		a = append(a, elem)
+	}
+
+	return a
+}
+
+func structEncoder(val interface{}) map[string] interface{} {
+	m := map[string] interface{}{}
+
+	t := reflect.TypeOf(val)
+	v := reflect.ValueOf(val)
+	// k := t.Kind()
+	// slog("kind[%v]", k)
+
+	for i := 0; i < t.NumField(); i++ {
+		field := t.Field(i)
+		fieldName := field.Name
+		// fieldType := field.Type
+		// slog("fieldName[%s], fieldType[%v]", fieldName, fieldType)
+		fieldValue := valueEncoder(v.Field(i).Interface())
+		fieldTag := field.Tag.Get("json")  // 取json的Tag
+
+		// slog("fieldValue[%v], fieldTag[%s]", fieldValue, fieldTag)
+
+		if len(fieldTag) > 0 {  // 优先用fieldTag
+			m[fieldTag] = fieldValue
+		} else {
+			m[fieldName] = fieldValue
+		}
+	}
+
+	return m
+}
+
 
 /*
 分析路径，返回路径切片
@@ -312,3 +720,40 @@ func parsePath(path string) []string {
 	return nameList
 }
 
+/*
+判断是否为基本类型
+ */
+func isPrimitiveType(v interface{}) bool {
+	// byte会返回uint8
+	// rune会返回int32
+
+	var typeOf = reflect.TypeOf(v).String()
+	return typeOf == "bool" ||
+			typeOf == "string" ||
+			typeOf == "int" ||
+			typeOf == "int8" ||
+			typeOf == "int16" ||
+			typeOf == "int32" ||
+			typeOf == "int64" ||
+			typeOf == "uint" ||
+			typeOf == "uint8" ||
+			typeOf == "uint16" ||
+			typeOf == "uint32" ||
+			typeOf == "uint64" ||
+			typeOf == "uintptr" ||
+			typeOf == "float32" ||
+			typeOf == "float64" ||
+			typeOf == "complex64" ||
+			typeOf == "complex128"
+
+}
+
+func slog(format string, args ...interface{}) {
+	// 获取时间
+	timestamp := time.Now().Format("2006-01-02 15:04:05.000")
+	_, file, line, _ := runtime.Caller(1)
+	// 变长参数，参考：  http://www.cnblogs.com/sysnap/p/6860671.html
+	content := fmt.Sprintf(format, args...)
+
+	fmt.Printf("[%s][%s][%05d]%s\n", timestamp, file, line, content)
+}
