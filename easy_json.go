@@ -545,7 +545,7 @@ func toJSONString(json interface{}, jsonType int) string {
 
 
 				if kind == "string" {
-					jsonString += `"` + v.(string) + `"`
+					jsonString += `"` + Stringer(v.(string), false) + `"`
 				} else if kind == "map" {
 					jsonString += toJSONString(v, JSON_TYPE_OBJECT)
 				} else if kind == "slice" {
