@@ -7,6 +7,8 @@ EasyJSON的[Java版本](https://github.com/373518155/EasyJSON)
 ### 引用库文件
 使用go get下载
 > go get github.com/373518155/EasyJSONGo
+
+
 然后在代码中引入库
 > import "github.com/373518155/EasyJSONGo"
 
