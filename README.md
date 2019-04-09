@@ -1,5 +1,6 @@
 # EasyJSONGo
 一个十分容易使用的Go语言JSON库（解析JSON、生成JSON）
+
 EasyJSON的[Java版本](https://github.com/373518155/EasyJSON)
 
 ## 开始使用
