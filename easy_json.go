@@ -378,17 +378,34 @@ func (easyJSON *EasyJSON) OptArray(path string, defaultValue *EasyJSON) *EasyJSO
 }
 
 /*
-遍历EasyJSONArray
-callback: 回调函数
+遍历EasyJSONObect 或 EasyJSONArray
+callback: 回调函数 如果是EasyJSONObect，key的类型为string；如果是EasyJSONArray，key的类型为int；
  */
-func (easyJSON *EasyJSON) Range(callback func(interface{})) {
-	if easyJSON.jsonType != JSON_TYPE_ARRAY {
-		panic(errors.New("Error!Range() operation on a non-array object"))
+func (easyJSON *EasyJSON) Range(callback func(key interface{}, value interface{})) {
+	for k, v := range easyJSON.a {
+		callback(k, v)
 	}
+	if easyJSON.jsonType == JSON_TYPE_OBJECT {
+		for k, v := range easyJSON.m {
+			callback(k, v)
+		}
+	} else if easyJSON.jsonType == JSON_TYPE_ARRAY {
+		for k, v := range easyJSON.a {
+			callback(k, v)
+		}
+	}
+}
 
-	for _, v := range easyJSON.a {
-		callback(v)
+/*
+获取EasyJSONObect 或 EasyJSONArray的元素个数
+ */
+func (easyJSON *EasyJSON) Length() int {
+	if easyJSON.jsonType == JSON_TYPE_OBJECT {
+		return len(easyJSON.m)
+	} else if easyJSON.jsonType == JSON_TYPE_ARRAY {
+		return len(easyJSON.a)
 	}
+	return -1;
 }
 
 func (easyJSON *EasyJSON) Set(path string, value interface{}) error  {
