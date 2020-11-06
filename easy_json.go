@@ -377,6 +377,20 @@ func (easyJSON *EasyJSON) OptArray(path string, defaultValue *EasyJSON) *EasyJSO
 	return defaultValue
 }
 
+/*
+遍历EasyJSONArray
+callback: 回调函数
+ */
+func (easyJSON *EasyJSON) Range(callback func(interface{})) {
+	if easyJSON.jsonType != JSON_TYPE_ARRAY {
+		panic(errors.New("Error!Range() operation on a non-array object"))
+	}
+
+	for _, v := range easyJSON.a {
+		callback(v)
+	}
+}
+
 func (easyJSON *EasyJSON) Set(path string, value interface{}) error  {
 	value = valueEncoder(value)
 
