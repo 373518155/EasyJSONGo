@@ -382,9 +382,6 @@ func (easyJSON *EasyJSON) OptArray(path string, defaultValue *EasyJSON) *EasyJSO
 callback: 回调函数 如果是EasyJSONObect，key的类型为string；如果是EasyJSONArray，key的类型为int；
  */
 func (easyJSON *EasyJSON) Range(callback func(key interface{}, value interface{})) {
-	for k, v := range easyJSON.a {
-		callback(k, v)
-	}
 	if easyJSON.jsonType == JSON_TYPE_OBJECT {
 		for k, v := range easyJSON.m {
 			callback(k, v)
